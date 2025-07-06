@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  nexus-app:
+    build: .
+    container_name: nexus-ai-assistant
+    restart: unless-stopped
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DEBUG_MODE=false
+      - LOG_LEVEL=info
+    ports:
+      - "8501:8501"  # Streamlit web interface
+      - "8000:8000"  # FastAPI interface (if implemented)
+    volumes:
+      - ./logs:/app/logs
+      - ./.env:/app/.env:ro
+    command: streamlit run web_app.py --server.address 0.0.0.0 --server.port 8501
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: Redis for caching (if needed in future)
+  redis:
+    image: redis:7-alpine
+    container_name: nexus-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    profiles:
+      - cache
+
+  # Optional: PostgreSQL database (if needed in future)
+  postgres:
+    image: postgres:15-alpine
+    container_name: nexus-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=nexus
+      - POSTGRES_USER=nexus
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-nexus123}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    profiles:
+      - database
+
+volumes:
+  redis_data:
+  postgres_data:
+
+networks:
+  default:
+    name: nexus-network
