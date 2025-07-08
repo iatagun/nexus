@@ -53,6 +53,10 @@ For more information, visit: https://github.com/yourusername/nexus
         action="store_true",
         help="Start with a fresh conversation"
     )
+    chat_parser.add_argument(
+        "--model",
+        help="Model to use (e.g., deepseek-coder:latest, gemma3:latest)"
+    )
     
     # Ask command
     ask_parser = subparsers.add_parser(
@@ -74,6 +78,10 @@ For more information, visit: https://github.com/yourusername/nexus
         type=int,
         default=2000,
         help="Maximum response length"
+    )
+    ask_parser.add_argument(
+        "--model",
+        help="Model to use (e.g., deepseek-coder:latest, gemma3:latest)"
     )
     
     # Web command
@@ -114,6 +122,30 @@ For more information, visit: https://github.com/yourusername/nexus
         help="Name of the model to pull"
     )
     
+    # Learning stats command
+    stats_parser = subparsers.add_parser(
+        "stats",
+        help="Show learning and improvement statistics"
+    )
+    
+    # Feedback command
+    feedback_parser = subparsers.add_parser(
+        "feedback",
+        help="Provide feedback on the last response"
+    )
+    feedback_parser.add_argument(
+        "rating",
+        type=int,
+        choices=[1, 0, -1],
+        help="Feedback rating (1: positive, 0: neutral, -1: negative)"
+    )
+    
+    # Improvement command
+    improve_parser = subparsers.add_parser(
+        "improve",
+        help="Show improvement suggestions and learning status"
+    )
+    
     return parser
 
 
@@ -126,6 +158,11 @@ def cmd_chat(args):
     print("-" * 50)
     
     try:
+        # Override model if specified
+        if args.model:
+            os.environ['OLLAMA_MODEL'] = args.model
+            print(f"🤖 Using model: {args.model}")
+        
         assistant = AIAssistant()
         
         if args.reset:
@@ -150,6 +187,51 @@ def cmd_chat(args):
                     print("  - quit/exit/bye: Exit the application")
                     print("  - reset: Clear conversation history")
                     print("  - help: Show this help message")
+                    print("  - feedback <rating>: Rate last response (1=good, 0=neutral, -1=bad)")
+                    print("  - stats: Show learning statistics")
+                    print("  - improve: Show improvement suggestions")
+                    continue
+                
+                elif user_input.lower().startswith('feedback '):
+                    try:
+                        rating = int(user_input.split()[1])
+                        if rating in [-1, 0, 1]:
+                            # Get last conversation
+                            history = assistant.get_conversation_history()
+                            if len(history) >= 2:
+                                last_user = history[-2]['content']
+                                last_assistant = history[-1]['content']
+                                result = assistant.provide_feedback(last_user, last_assistant, rating)
+                                print(f"\n💡 Feedback recorded! Quality score: {result['overall_quality']:.2f}")
+                                if result['suggestions']:
+                                    print("🎯 Improvement suggestions:")
+                                    for suggestion in result['suggestions']:
+                                        print(f"  - {suggestion}")
+                            else:
+                                print("❌ No recent conversation to rate.")
+                        else:
+                            print("❌ Rating must be -1, 0, or 1")
+                    except (ValueError, IndexError):
+                        print("❌ Invalid feedback format. Use: feedback <rating>")
+                    continue
+                
+                elif user_input.lower() == 'stats':
+                    stats = assistant.get_learning_stats()
+                    print("\n📊 Learning Statistics:")
+                    print(f"  Total conversations: {stats['total_conversations']}")
+                    print(f"  Positive feedback rate: {stats['positive_feedback_rate']:.1%}")
+                    print(f"  Average quality score: {stats['avg_quality_score']:.1%}")
+                    print(f"  Learned patterns: {stats['learned_patterns']}")
+                    continue
+                
+                elif user_input.lower() == 'improve':
+                    summary = assistant.continuous_improvement_summary()
+                    print(f"\n🧠 Continuous Improvement Status:")
+                    print(f"  Level: {summary['improvement_level']}")
+                    print(f"  Total interactions: {summary['total_interactions']}")
+                    print(f"  Satisfaction rate: {summary['satisfaction_rate']}")
+                    print(f"  Quality score: {summary['quality_score']}")
+                    print(f"  Adaptive capabilities: {', '.join(summary['adaptive_capabilities'])}")
                     continue
                 
                 elif not user_input:
@@ -177,6 +259,11 @@ def cmd_chat(args):
 def cmd_ask(args):
     """Handle ask command"""
     try:
+        # Override model if specified
+        if args.model:
+            os.environ['OLLAMA_MODEL'] = args.model
+            print(f"🤖 Using model: {args.model}")
+        
         assistant = AIAssistant()
         
         print(f"💭 Question: {args.question}")
@@ -296,6 +383,74 @@ def cmd_pull(args):
         return 1
 
 
+def cmd_stats(args):
+    """Handle stats command"""
+    try:
+        assistant = AIAssistant()
+        stats = assistant.get_learning_stats()
+        
+        print("📊 Nexus Learning Statistics")
+        print("=" * 40)
+        print(f"Total conversations: {stats['total_conversations']}")
+        print(f"Positive feedback rate: {stats['positive_feedback_rate']:.1%}")
+        print(f"Average quality score: {stats['avg_quality_score']:.1%}")
+        print(f"Average response time: {stats['avg_response_time']:.2f}s")
+        
+        print("\n🧠 Learned Patterns:")
+        for pattern_type, count in stats['learned_patterns'].items():
+            print(f"  {pattern_type}: {count} patterns")
+        
+        return 0
+        
+    except Exception as e:
+        print(f"❌ Error getting statistics: {e}")
+        return 1
+
+
+def cmd_feedback(args):
+    """Handle feedback command"""
+    try:
+        print("💡 Feedback feature requires an active conversation.")
+        print("Use this command within the chat interface:")
+        print("  nexus chat")
+        print("  > your question")
+        print("  > feedback 1  # Rate the response")
+        return 0
+        
+    except Exception as e:
+        print(f"❌ Error with feedback: {e}")
+        return 1
+
+
+def cmd_improve(args):
+    """Handle improve command"""
+    try:
+        assistant = AIAssistant()
+        summary = assistant.continuous_improvement_summary()
+        
+        print("🧠 Continuous Improvement Status")
+        print("=" * 40)
+        print(f"Improvement Level: {summary['improvement_level']}")
+        print(f"Total Interactions: {summary['total_interactions']}")
+        print(f"Satisfaction Rate: {summary['satisfaction_rate']}")
+        print(f"Quality Score: {summary['quality_score']}")
+        
+        print("\n🎯 Adaptive Capabilities:")
+        for capability in summary['adaptive_capabilities']:
+            print(f"  ✓ {capability}")
+        
+        print("\n💡 Suggestions:")
+        suggestions = assistant.suggest_improvements()
+        for suggestion in suggestions:
+            print(f"  • {suggestion}")
+        
+        return 0
+        
+    except Exception as e:
+        print(f"❌ Error getting improvement info: {e}")
+        return 1
+
+
 def main():
     """Main CLI entry point"""
     parser = create_parser()
@@ -320,6 +475,12 @@ def main():
         return cmd_models(args)
     elif args.command == "pull":
         return cmd_pull(args)
+    elif args.command == "stats":
+        return cmd_stats(args)
+    elif args.command == "feedback":
+        return cmd_feedback(args)
+    elif args.command == "improve":
+        return cmd_improve(args)
     else:
         parser.print_help()
         return 1

@@ -20,7 +20,12 @@ class Config(BaseSettings):
     
     # Ollama Configuration
     ollama_host: str = Field("http://localhost:11434", env="OLLAMA_HOST")
-    ollama_model: str = Field("llama3.2", env="OLLAMA_MODEL")
+    ollama_model: str = Field("deepseek-coder:latest", env="OLLAMA_MODEL")
+    
+    @property
+    def current_ollama_model(self) -> str:
+        """Get current Ollama model, checking environment variables first"""
+        return os.getenv("OLLAMA_MODEL", self.ollama_model)
     
     # Application Settings
     debug_mode: bool = Field(False, env="DEBUG_MODE")

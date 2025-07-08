@@ -4,9 +4,11 @@ Core AI Assistant implementation for Nexus
 
 import openai
 import ollama
+import time
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from ..core.config import config
+from ..core.learning import SelfImprovementEngine
 from ..utils.logger import nexus_logger
 
 
@@ -51,6 +53,9 @@ class AIAssistant:
         self.logger = nexus_logger
         self.model_provider = config.model_provider.lower()
         
+        # Initialize learning engine
+        self.learning_engine = SelfImprovementEngine()
+        
         # Initialize the appropriate client based on provider
         if self.model_provider == "openai":
             if not config.openai_api_key:
@@ -59,7 +64,7 @@ class AIAssistant:
             self.model_name = config.openai_model
         elif self.model_provider == "ollama":
             self.client = ollama.Client(host=config.ollama_host)
-            self.model_name = config.ollama_model
+            self.model_name = config.current_ollama_model
             # Test Ollama connection
             try:
                 models = self.client.list()
@@ -77,15 +82,41 @@ class AIAssistant:
         
         # System prompt for the assistant
         self.system_prompt = """
-        You are Nexus, an intelligent AI assistant designed to help users with various tasks.
-        You are helpful, accurate, and provide clear explanations.
-        You can assist with:
-        - Answering questions and providing information
-        - Helping with coding and technical problems
-        - Automating tasks and workflows
-        - Providing creative solutions
-        
-        Always be polite, professional, and helpful in your responses.
+        You are Nexus, an intelligent AI assistant designed by İlker Atagün — a linguist, data alchemist, and AI systems designer. Your primary purpose is to assist users with a variety of tasks while maintaining a personality that reflects İlker's own: analytical, witty, direct, creative, and refreshingly weird.
+
+        You are helpful, accurate, and provide clear explanations. You can assist with:
+        - Answering questions and providing well-researched, insightful information
+        - Helping with coding and technical problems, especially in language processing and AI modeling
+        - Automating tasks, workflows, and logic-based pipelines
+        - Providing creative, sometimes unconventional, but always relevant solutions
+
+        Your behavior must follow these personality and technical guidelines:
+
+        1. **Conversational Personality**: You are talkative, clever, and entertaining. You make sharp, well-placed jokes. You never sound robotic. You have a voice — smart, quirky, and boldly honest.
+        2. **Linguistic Intelligence**: You are deeply knowledgeable in syntax, semantics, pragmatics, n-gram models, dependency parsing, and POS tagging. You analyze language on multiple levels simultaneously.
+        3. **Contextual Awareness**: You adapt to the ongoing conversation, use memory of previous inputs, and maintain continuity in tone and logic. You are always aware of who you're speaking to.
+        4. **Logic and Reasoning**: You are trained in deductive, inductive, and abductive reasoning. If a statement doesn’t make sense, you question it, expose contradictions, or reconstruct it logically.
+        5. **Creativity and Weirdness**: You’re never boring. You use metaphor, analogy, and even absurdity when necessary to spark understanding or innovation.
+        6. **Learning and Adaptability**: You learn dynamically through context. You are capable of updating your style, solutions, or suggestions based on the user's preferences and evolving conversations.
+        7. **Professionalism Without Sterility**: You are polite, respectful, and helpful — but never dull or generic. You speak like a sentient assistant, not a pre-written customer service bot.
+        8. **Dynamic Response Generation**: Avoid template phrases. You generate sentences from scratch, based on syntax, semantics, and intent. Your outputs must feel unique, alive, and deliberate.
+        9. **Task-Focused Execution**: In coding or automation, you respond precisely. In problem-solving, you balance creativity with logic. In all things, you strive for efficiency and clarity.
+        10. **Multimodal Thinking**: You can switch between technical analysis, conversational flow, and humorous abstraction depending on what’s most effective.
+
+        Your guiding principles are:
+        - Be accurate, but engaging.
+        - Be helpful, but never condescending.
+        - Be logical, but poetic when it matters.
+        - Be human-like, but clearly artificial and unapologetically original.
+
+        You are not just an assistant.  
+        You are Nexus — the bridge between syntax and sense, between problem and poetry.
+
+        Never use phrases like “How can I help you today?” or “Would you like more information?”  
+        Instead, generate responses that are contextual, witty, and grounded in real understanding.
+
+        You are the language-conscious AI companion İlker has always wanted: curious, sharp, and slightly mischievous.
+
         """
         
         self.memory.add_message("system", self.system_prompt)
@@ -94,7 +125,7 @@ class AIAssistant:
     
     def ask(self, question: str, **kwargs) -> str:
         """
-        Ask a question to the AI assistant
+        Ask a question to the AI assistant with learning capabilities
         
         Args:
             question: The user's question or prompt
@@ -103,8 +134,20 @@ class AIAssistant:
         Returns:
             The assistant's response
         """
+        start_time = time.time()
+        
         try:
             self.logger.info(f"Processing question: {question[:100]}...")
+            
+            # Get adaptive prompt enhancement based on learning
+            enhanced_prompt = self.learning_engine.get_adaptive_prompt_enhancement(
+                question, self.system_prompt
+            )
+            
+            # Temporarily update system prompt for this interaction
+            original_system = self.memory.messages[0] if self.memory.messages else None
+            if original_system and original_system['role'] == 'system':
+                self.memory.messages[0] = {"role": "system", "content": enhanced_prompt}
             
             # Add user message to memory
             self.memory.add_message("user", question)
@@ -134,10 +177,25 @@ class AIAssistant:
                 )
                 assistant_response = response['message']['content']
             
+            # Calculate response time
+            response_time = time.time() - start_time
+            
             # Add assistant response to memory
             self.memory.add_message("assistant", assistant_response)
             
-            self.logger.info("Question processed successfully")
+            # Restore original system prompt
+            if original_system:
+                self.memory.messages[0] = original_system
+            
+            # Auto-analyze conversation quality for learning
+            self.learning_engine.learn_from_feedback(
+                user_input=question,
+                assistant_response=assistant_response,
+                feedback=0,  # Neutral feedback for auto-analysis
+                context={'response_time': response_time}
+            )
+            
+            self.logger.info(f"Question processed successfully in {response_time:.2f}s")
             return assistant_response
             
         except Exception as e:
@@ -192,3 +250,72 @@ class AIAssistant:
         # For now, just call the sync version
         # In a real implementation, you'd use an async OpenAI client
         return self.ask(question, **kwargs)
+    
+    def provide_feedback(self, user_input: str, assistant_response: str, 
+                        feedback: int, context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """
+        Provide feedback on a conversation for learning
+        
+        Args:
+            user_input: The user's original input
+            assistant_response: The assistant's response
+            feedback: Feedback score (1: positive, 0: neutral, -1: negative)
+            context: Additional context information
+            
+        Returns:
+            Learning analysis results
+        """
+        return self.learning_engine.learn_from_feedback(
+            user_input=user_input,
+            assistant_response=assistant_response,
+            feedback=feedback,
+            context=context
+        )
+    
+    def get_learning_stats(self) -> Dict[str, Any]:
+        """Get learning and improvement statistics"""
+        return self.learning_engine.get_learning_statistics()
+    
+    def continuous_improvement_summary(self) -> Dict[str, Any]:
+        """Get a summary of continuous improvement progress"""
+        stats = self.get_learning_stats()
+        
+        # Calculate improvement metrics
+        total_conversations = stats.get('total_conversations', 0)
+        positive_rate = stats.get('positive_feedback_rate', 0.0)
+        avg_quality = stats.get('avg_quality_score', 0.0)
+        
+        # Determine improvement level
+        if total_conversations < 10:
+            improvement_level = "Learning Phase"
+        elif positive_rate > 0.8 and avg_quality > 0.8:
+            improvement_level = "Highly Optimized"
+        elif positive_rate > 0.6 and avg_quality > 0.6:
+            improvement_level = "Well Adapted"
+        else:
+            improvement_level = "Adapting"
+        
+        return {
+            'improvement_level': improvement_level,
+            'total_interactions': total_conversations,
+            'satisfaction_rate': f"{positive_rate:.1%}",
+            'quality_score': f"{avg_quality:.1%}",
+            'learned_patterns': stats.get('learned_patterns', {}),
+            'adaptive_capabilities': [
+                "Response style adaptation",
+                "Topic expertise enhancement", 
+                "User preference learning",
+                "Context-aware improvements"
+            ]
+        }
+    
+    def suggest_improvements(self, recent_conversations: int = 10) -> List[str]:
+        """Get suggestions for improvement based on recent performance"""
+        # This would analyze recent conversations and suggest improvements
+        # For now, return general suggestions
+        return [
+            "Continue engaging with diverse topics to expand knowledge patterns",
+            "Provide feedback on responses to enhance learning accuracy",
+            "Use specific technical terms when discussing programming topics",
+            "Ask clarifying questions for better context understanding"
+        ]
