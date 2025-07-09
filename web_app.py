@@ -102,18 +102,34 @@ st.markdown("""
     box-shadow: 0 8px 32px rgba(118, 75, 162, 0.2);
 }
 
-/* Input Styling */
-.stTextArea textarea {
-    background: rgba(255, 255, 255, 0.05) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-radius: 0.5rem !important;
-    color: #e0e0e0 !important;
-    backdrop-filter: blur(10px);
-}
 
+/* Sticky Chat Input */
+.sticky-chat-input {
+    position: sticky;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    z-index: 100;
+    background: linear-gradient(135deg, #0c0c0c 80%, #1a1a2e 100%);
+    padding-top: 1rem;
+    padding-bottom: 1.5rem;
+    box-shadow: 0 -4px 32px 0 rgba(102,126,234,0.08);
+    border-top: 1px solid rgba(255,255,255,0.05);
+}
+.stTextArea textarea {
+    background: rgba(255, 255, 255, 0.08) !important;
+    border: 1.5px solid rgba(102, 126, 234, 0.15) !important;
+    border-radius: 0.7rem !important;
+    color: #e0e0e0 !important;
+    font-size: 1.08rem !important;
+    font-family: 'Inter', sans-serif !important;
+    padding: 1rem !important;
+    backdrop-filter: blur(10px);
+    transition: border 0.2s, box-shadow 0.2s;
+}
 .stTextArea textarea:focus {
-    border-color: #667eea !important;
-    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2) !important;
+    border-color: #f093fb !important;
+    box-shadow: 0 0 0 2px #f093fb55 !important;
 }
 
 /* Button Styling */
@@ -416,124 +432,47 @@ def main():
     # Sidebar
     with st.sidebar:
         st.markdown('<h2 style="text-align: center; margin-bottom: 1rem;">⚙️ Control Panel</h2>', unsafe_allow_html=True)
-        
-        # Check if assistant is initialized
-        if not st.session_state.get("is_initialized", False):
-            st.error("❌ Failed to initialize AI Assistant")
-            if "error_message" in st.session_state:
-                st.error(f"Error: {st.session_state.error_message}")
-            st.stop()
-        
-        st.markdown('<div style="text-align: center; padding: 1rem; background: rgba(0, 255, 0, 0.1); border-radius: 0.5rem; margin-bottom: 1rem;">🟢 System Online</div>', unsafe_allow_html=True)
-        
-        # Show current model info
-        if hasattr(st.session_state, 'model_provider'):
-            st.markdown(f'<div class="metric-container">🤖 Provider: <strong>{st.session_state.model_provider}</strong></div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="metric-container">📋 Model: <strong>{st.session_state.model_name}</strong></div>', unsafe_allow_html=True)
-        
-        # Conversation controls
-        if st.button("🔄 Reset Conversation"):
-            st.session_state.assistant.reset_conversation()
-            st.session_state.conversation_history = []
-            st.success("Conversation reset!")
+
+        # Multi-chat system: List chats and allow switching/creating
+        st.markdown('<h4 style="margin-top:1rem;">� Chats</h4>', unsafe_allow_html=True)
+        chat_ids = list(st.session_state.chat_sessions.keys())
+        chat_names = [st.session_state.chat_sessions[cid]["name"] for cid in chat_ids]
+        selected_idx = chat_ids.index(st.session_state.active_chat_id)
+        selected_chat = st.radio("Select Chat:", chat_names, index=selected_idx, key="chat_select", label_visibility="collapsed")
+        # Change active chat if needed
+        new_chat_id = chat_ids[chat_names.index(selected_chat)]
+        if new_chat_id != st.session_state.active_chat_id:
+            st.session_state.active_chat_id = new_chat_id
+            st.session_state.conversation_history = st.session_state.chat_sessions[new_chat_id]["history"]
             st.rerun()
-        
-        # Model settings
-        st.subheader("🔧 Model Settings")
-        
-        # Model selection for Ollama
-        if st.session_state.get('model_provider') == 'ollama':
-            try:
-                import ollama
-                models_response = ollama.list()
-                model_names = [model['model'] for model in models_response['models']]
-                
-                if model_names:
-                    current_model = os.getenv('OLLAMA_MODEL', 'deepseek-coder:latest')
-                    selected_model = st.selectbox(
-                        "Select Ollama Model:",
-                        options=model_names,
-                        index=model_names.index(current_model) if current_model in model_names else 0
-                    )
-                    
-                    if selected_model != current_model:
-                        if st.button("🔄 Switch Model"):
-                            os.environ['OLLAMA_MODEL'] = selected_model
-                            # Re-initialize assistant with new model
-                            st.session_state.assistant = AIAssistant()
-                            st.session_state.model_name = selected_model
-                            st.success(f"Switched to {selected_model}")
-                            st.rerun()
-                else:
-                    st.warning("No Ollama models found. Pull some models first.")
-            except Exception as e:
-                st.error(f"Error loading Ollama models: {e}")
-                st.error(f"Debug info: {type(e).__name__}: {str(e)}")
-        
+        if st.button("➕ New Chat", use_container_width=True):
+            st.session_state.chat_counter += 1
+            new_id = f"chat_{st.session_state.chat_counter}"
+            st.session_state.chat_sessions[new_id] = {
+                "id": new_id,
+                "name": f"Chat {st.session_state.chat_counter}",
+                "history": [],
+                "created_at": "2025-07-09",
+                "last_updated": "2025-07-09"
+            }
+            st.session_state.active_chat_id = new_id
+            st.session_state.conversation_history = st.session_state.chat_sessions[new_id]["history"]
+            st.rerun()
+
+        # ...existing code...
+        # Model settings (for temperature and max_tokens sliders)
+        global temperature, max_tokens
         temperature = st.slider("Temperature", 0.0, 2.0, 0.7, 0.1)
         max_tokens = st.slider("Max Tokens", 100, 4000, 2000, 100)
-        
-        # Learning Statistics Section
-        st.markdown('<div style="height: 1rem;"></div>', unsafe_allow_html=True)
-        st.subheader("🧠 Learning Stats")
-        
-        try:
-            if hasattr(st.session_state, 'assistant'):
-                stats = st.session_state.assistant.get_learning_stats()
-                
-                # Display learning metrics
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric("Conversations", stats['total_conversations'])
-                    st.metric("Quality Score", f"{stats['avg_quality_score']:.1%}")
-                
-                with col2:
-                    st.metric("Positive Rate", f"{stats['positive_feedback_rate']:.1%}")
-                    st.metric("Response Time", f"{stats['avg_response_time']:.1f}s")
-                
-                # Learning level
-                if stats['total_conversations'] > 0:
-                    summary = st.session_state.assistant.continuous_improvement_summary()
-                    level = summary['improvement_level']
-                    level_color = {
-                        'Learning Phase': '🟡',
-                        'Adapting': '🟠', 
-                        'Well Adapted': '�',
-                        'Highly Optimized': '🔥'
-                    }.get(level, '🟡')
-                    
-                    st.markdown(f"""
-                    <div class="metric-container" style="text-align: center;">
-                        <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">{level_color}</div>
-                        <div style="font-size: 0.9rem; opacity: 0.7;">Learning Level</div>
-                        <div style="font-size: 1rem; font-weight: bold; margin-top: 0.5rem;">{level}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Show learned patterns
-                    if stats['learned_patterns']:
-                        st.markdown("**🔬 Learned Patterns:**")
-                        for pattern_type, count in stats['learned_patterns'].items():
-                            st.markdown(f"• {pattern_type}: {count}")
-                else:
-                    st.info("🌱 System is ready to learn from interactions")
-                    
-        except Exception as e:
-            st.error(f"Learning stats unavailable: {e}")
-        
-        # Statistics
-        st.subheader("📊 Session Stats")
-        st.metric("Messages in History", len(st.session_state.conversation_history))
     
     # Main chat interface
     col1, col2 = st.columns([3, 1])
-    
+
     with col1:
         st.markdown('<h3 style="text-align: center; margin-bottom: 2rem; opacity: 0.8;">💫 Neural Interface</h3>', unsafe_allow_html=True)
-        
+
         # Display conversation history
         chat_container = st.container()
-        
         with chat_container:
             if not st.session_state.conversation_history:
                 st.markdown("""
@@ -542,17 +481,16 @@ def main():
                     <div style="font-size: 1.2rem;">The neural network awaits your query...</div>
                 </div>
                 """, unsafe_allow_html=True)
-            
             # Display conversation history with feedback
             for i, message in enumerate(st.session_state.conversation_history):
                 if message["role"] == "user":
                     display_chat_message(message["role"], message["content"])
                 else:
-                    # For assistant messages, pass the message index for feedback
-                    message_index = i // 2  # Each pair (user, assistant) gets same index
+                    message_index = i // 2
                     display_chat_message(message["role"], message["content"], message_index)
-        
-        # Chat input
+
+        # Sticky chat input
+        st.markdown('<div class="sticky-chat-input">', unsafe_allow_html=True)
         with st.form("chat_form", clear_on_submit=True):
             user_input = st.text_area(
                 "◦ Transmit your thoughts ◦",
@@ -560,17 +498,15 @@ def main():
                 height=100,
                 key="user_input"
             )
-            
             col_send, col_example = st.columns([1, 2])
-            
             with col_send:
                 send_button = st.form_submit_button("⚡ Transmit", use_container_width=True)
-            
             with col_example:
-                if st.form_submit_button("� Example Query", use_container_width=True):
+                if st.form_submit_button("💡 Example Query", use_container_width=True):
                     user_input = "What mysteries of the universe can you reveal?"
                     send_button = True
-        
+        st.markdown('</div>', unsafe_allow_html=True)
+
         # Process user input
         if send_button and user_input.strip():
             # Add user message to history
@@ -578,27 +514,23 @@ def main():
                 "role": "user",
                 "content": user_input
             })
-            
+            # Update chat session history
+            st.session_state.chat_sessions[st.session_state.active_chat_id]["history"] = st.session_state.conversation_history
             # Show thinking spinner
             with st.spinner("🤔 Nexus is thinking..."):
                 try:
-                    # Get response from assistant
                     response = st.session_state.assistant.ask(
                         user_input,
                         temperature=temperature,
                         max_tokens=max_tokens
                     )
-                    
-                    # Add assistant response to history
                     st.session_state.conversation_history.append({
                         "role": "assistant",
                         "content": response
                     })
-                    
+                    st.session_state.chat_sessions[st.session_state.active_chat_id]["history"] = st.session_state.conversation_history
                 except Exception as e:
                     st.error(f"❌ Error: {str(e)}")
-            
-            # Rerun to update the chat display
             st.rerun()
     
     with col2:
